@@ -1,0 +1,74 @@
+x-app: &app
+  build: .
+  image: ticketpilot:local
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    MCP_URL: http://mcp-server:8001/mcp
+    DATABASE_URL: postgresql://ticketpilot:ticketpilot@postgres:5432/ticketpilot
+    API_URL: http://api:8000
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ticketpilot
+      POSTGRES_PASSWORD: ticketpilot
+      POSTGRES_DB: ticketpilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketpilot"]
+      interval: 5s
+      retries: 10
+
+  mcp-server:
+    <<: *app
+    command: ["python", "-m", "ticketpilot.mcp_server.server"]
+    environment:
+      <<: *app-env
+      MCP_HOST: 0.0.0.0
+      SUPPORT_DB_PATH: /data/support.db
+    volumes:
+      - supportdata:/data
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8001), 2)"]
+      interval: 5s
+      retries: 10
+
+  api:
+    <<: *app
+    command: ["python", "-m", "ticketpilot.api"]
+    environment:
+      <<: *app-env
+      API_HOST: 0.0.0.0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mcp-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      retries: 20
+
+  ui:
+    <<: *app
+    command: ["streamlit", "run", "src/ticketpilot/ui.py", "--server.address", "0.0.0.0", "--server.headless", "true"]
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  supportdata:
