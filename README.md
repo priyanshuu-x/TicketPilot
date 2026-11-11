@@ -12,13 +12,11 @@ containers with CI/CD on GitHub Actions.
 
 > Built as a capstone for "planning + tools + state + recovery + controlled autonomy, not merely
 > an LLM wrapped in a while loop." The loop is written by hand first
-> ([`react_loop.py`](src/ticketpilot/react_loop.py), [docs](docs/agent-loop.md)), then rebuilt
-> in LangGraph.
+> ([`react_loop.py`](src/ticketpilot/react_loop.py)), then rebuilt in LangGraph.
 
 **Contents:** [What it does](#what-it-does) · [Architecture](#architecture) ·
-[The agent team](#the-agent-team) · [Human in the loop](#human-in-the-loop) ·
-[Safety](#safety-layers) · [Memory](#memory) · [Evaluation](#evaluation) ·
-[Run it](#run-it) · [Project structure](#project-structure) · [Design docs](#design-docs)
+[The agent team](#the-agent-team) · [Safety](#safety-layers) · [Memory](#memory) ·
+[Evaluation](#evaluation) · [Run it](#run-it) · [Project structure](#project-structure)
 
 ## What it does
 
@@ -104,38 +102,6 @@ chat histories, which keeps every prompt small.
 supervisor is capped at `MAX_HANDOFFS` decisions, after which the ticket is escalated, and each
 specialist at `MAX_STEPS` model calls.
 
-## Human in the loop
-
-```mermaid
-sequenceDiagram
-    participant R as Resolver agent
-    participant G as Guarded issue_refund
-    participant M as MCP server
-    participant P as Postgres
-    participant H as Reviewer (UI / CLI)
-
-    R->>G: issue_refund(A103, 2499)
-    G->>M: refund for the ticket's customer
-    M-->>G: needs human approval
-    G->>P: interrupt() saves the run
-    Note over P: paused, minutes or days
-    H->>P: approve (or change amount / reject)
-    P->>G: resume with the decision
-    G->>M: record_approval (single use)
-    G->>M: refund with approval id
-    M-->>G: refunded Rs 2499
-    G-->>R: "Approved by a human reviewer..."
-```
-
-- **The pause is in code, not in a prompt.** The resolver only has the guarded tool, and the MCP
-  server rejects risky refunds without a valid approval.
-- **The rules live in one place.** The guarded tool doesn't re-check "above Rs 2,000" itself; it
-  tries the refund and the server decides.
-- **Asynchronous.** A paused run is just saved state, so a reviewer answers from any process,
-  any time later.
-- **Recovery:** model calls retry with backoff and then use a fallback model; tool errors go back
-  to the agent as observations; a crashed run continues from its last checkpoint (`resume`).
-
 ## Safety layers
 
 | Layer | How |
@@ -176,8 +142,7 @@ state, not from the reply text.
 | Latency / tokens per ticket | ~40 s / ~7,000 (Groq free tier) |
 
 Full report: [`evals/report.md`](evals/report.md). The evals found real problems, which were fixed
-in the code rather than by re-running until the numbers looked good. Those findings, and the
-known open issues, are in [docs/guardrails-and-evals.md](docs/guardrails-and-evals.md).
+in the code rather than by re-running until the numbers looked good.
 
 ## Tech stack
 
@@ -273,21 +238,8 @@ src/ticketpilot/
 └── react_loop.py         # Phase 1: the agent loop written by hand, no framework
 evals/                    # golden tickets, eval runner, latest report
 tests/                    # 51 tests (fake LLM, in-memory MCP server)
-docs/                     # design notes, one per topic
 Dockerfile · docker-compose.yml · .github/workflows/
 ```
-
-## Design docs
-
-| Topic | Doc |
-|---|---|
-| The agent loop from first principles, and what LangGraph adds | [agent-loop.md](docs/agent-loop.md) |
-| Multi-agent design: roles, routing, stopping conditions | [multi-agent.md](docs/multi-agent.md) |
-| Memory: checkpoints, trimming, pgvector, RAG | [memory.md](docs/memory.md) |
-| Human in the loop and recovery | [human-in-the-loop.md](docs/human-in-the-loop.md) |
-| Guardrails, evals, findings and open issues | [guardrails-and-evals.md](docs/guardrails-and-evals.md) |
-| API and UI | [api-and-ui.md](docs/api-and-ui.md) |
-| Docker and CI/CD | [docker-and-ci.md](docs/docker-and-ci.md) |
 
 ## Limitations
 
